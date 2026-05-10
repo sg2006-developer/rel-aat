@@ -1,0 +1,19 @@
+# Q-Learning Experiment Config — V1 (Conservative)
+# Reproduce this run: python train.py --config qlearning_v1.yaml
+
+run_id: "v1"
+policy: "policy_v1"
+
+# Training hyperparameters
+n_episodes: 800
+alpha: 0.1          # learning rate
+gamma: 0.95         # discount factor
+epsilon: 1.0        # initial exploration rate
+epsilon_min: 0.05   # floor for epsilon (5% random actions after convergence)
+epsilon_decay: 0.995  # epsilon reaches ~0.05 around episode 600
+
+# Output paths
+save_path: "policy_v1.pkl"
+plot_path: "training_v1.png"
+log_csv: "results_v1.csv"
+log_json: "log.json"

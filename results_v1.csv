@@ -1,0 +1,2 @@
+run_id,episodes,avg_reward,avg_water_used,avg_crop_health,epsilon,epsilon_min,epsilon_decay,alpha,gamma,policy_file
+v1,800,289.75,255.2125,74.0133,1.0,0.05,0.995,0.1,0.95,policy_v1.pkl

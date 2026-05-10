@@ -1,0 +1,19 @@
+# Q-Learning Experiment Config — V2 (Exploratory)
+# Reproduce this run: python train.py --config qlearning_v2.yaml
+
+run_id: "v2"
+policy: "policy_v2_explored"
+
+# Training hyperparameters
+n_episodes: 1500
+alpha: 0.08         # smaller lr -> more stable convergence
+gamma: 0.97         # values future rewards more
+epsilon: 1.0        # initial exploration rate
+epsilon_min: 0.02   # explore even longer before converging
+epsilon_decay: 0.998  # slower decay -> richer exploration
+
+# Output paths
+save_path: "policy_v2_explored.pkl"
+plot_path: "training_v2_explored.png"
+log_csv: "results_v2.csv"
+log_json: "log.json"
