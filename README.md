@@ -6,6 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
 [![Algorithm](https://img.shields.io/badge/Algorithm-Q--Learning-green)](https://en.wikipedia.org/wiki/Q-learning)
 [![MLOps](https://img.shields.io/badge/MLOps-YAML%20%7C%20CSV%20%7C%20JSON%20%7C%20Git%20Tags-orange)]()
+[![MLflow](https://img.shields.io/badge/MLflow-3.x-0194E2?logo=mlflow&logoColor=white)](https://mlflow.org)
 [![SDG](https://img.shields.io/badge/SDG-2%20%7C%206-teal)]()
 
 ---
@@ -42,8 +43,8 @@ Approximately 70% of global freshwater is used in agriculture. This RL agent ach
 rel-aat/
 ├── environment.py              # Irrigation simulation (state, action, reward, transitions)
 ├── agent.py                    # Tabular Q-Learning agent (ε-greedy, save/load)
-├── train.py                    # Training loop + YAML config support + CSV/JSON logging
-├── evaluate.py                 # RL vs fixed-baseline evaluation + comparison plots
+├── train.py                    # Training loop + YAML config support + CSV/JSON logging + MLflow
+├── evaluate.py                 # RL vs fixed-baseline evaluation + comparison plots + MLflow
 ├── main.py                     # CLI entry point (--train, --evaluate, --compare, --demo)
 ├── app.py                      # Tkinter desktop GUI (live simulation + training visualiser)
 │
@@ -62,6 +63,9 @@ rel-aat/
 ├── training_v2_explored.png    # Training progress plot: V2 (reward, water, health)
 ├── evaluation_comparison.png   # Bar chart: RL agent vs fixed-timer baseline
 │
+├── mlruns/                     # MLflow tracking store (auto-created on first run)
+├── mlflow.db                   # MLflow SQLite backend (auto-created on first run)
+│
 ├── REPORT.md                   # Full evaluation report (results, analysis, SDG impact)
 ├── .gitignore                  # Excludes: __pycache__, venv, verify.py, mlops_tasks.pdf
 └── README.md                   # This file
@@ -73,7 +77,7 @@ rel-aat/
 
 ### Prerequisites
 - Python 3.8+
-- `numpy`, `matplotlib`, `pyyaml`
+- `numpy`, `matplotlib`, `pyyaml`, `mlflow`
 - `tkinter` (bundled with standard Python — required only for the GUI)
 
 ### Install
@@ -84,7 +88,7 @@ git clone https://github.com/Sandy-383/rel-aat.git
 cd rel-aat
 
 # Install dependencies
-pip install numpy matplotlib pyyaml
+pip install numpy matplotlib pyyaml mlflow
 ```
 
 > **Fork note**: A contributor fork is also available at `https://github.com/sg2006-developer/rel-aat.git`
@@ -184,9 +188,9 @@ python app.py
 
 ## Experiment Tracking
 
-Every training run is automatically logged to both CSV and JSON.
+Every training run is automatically logged to **both** flat files (CSV / JSON) **and** MLflow.
 
-### CSV Log Format (`results_v1.csv`, `results_v2.csv`)
+### CSV / JSON Logs
 
 | Field | Description |
 |-------|-------------|
@@ -210,6 +214,80 @@ Every training run is automatically logged to both CSV and JSON.
 | v2  | 1500     | 57.93              | 267.3     | 65.6            |
 
 > **Note**: Training averages include early random-exploration episodes (high water, low reward). Evaluation metrics (on the converged policy) are significantly better — see [REPORT.md](REPORT.md) for the full baseline vs RL comparison.
+
+---
+
+## MLflow Experiment Tracking
+
+This project integrates **MLflow** for professional experiment tracking, model versioning, and the MLflow Model Registry. All data is stored locally — no cloud account required.
+
+### What Gets Logged
+
+**Per training run** (`train.py`):
+
+| Category | Items |
+|----------|-------|
+| **Parameters** | `run_id`, `n_episodes`, `alpha`, `gamma`, `epsilon`, `epsilon_min`, `epsilon_decay`, `policy_file`, `label` |
+| **Step Metrics** | `avg_reward_100`, `avg_water_100`, `avg_health_100`, `epsilon` — logged every 100 episodes |
+| **Final Metrics** | `final_avg_reward`, `final_avg_water_used`, `final_avg_crop_health` |
+| **Artifacts** | Training plot (`.png`), CSV log, JSON log |
+| **Registered Model** | `QlearningAgent-v1` / `QlearningAgent-v2` (versioned in Model Registry) |
+
+**Per evaluation run** (`evaluate.py`):
+
+| Metric | Description |
+|--------|-------------|
+| `eval_rl_avg_reward` | Mean total reward of the RL agent |
+| `eval_rl_avg_water` | Mean water used by the RL agent |
+| `eval_rl_avg_health` | Mean crop health of the RL agent |
+| `eval_base_avg_reward` | Mean total reward of the fixed-schedule baseline |
+| `eval_base_avg_water` | Mean water used by the baseline |
+| `eval_base_avg_health` | Mean crop health of the baseline |
+| `eval_water_saved_pct` | Water saving % of RL agent vs baseline |
+
+### Running MLflow
+
+```bash
+# Step 1 — Train (automatically creates and logs MLflow runs)
+python train.py --all
+# OR reproduce a single config:
+python train.py --config qlearning_v1.yaml
+
+# Step 2 — Evaluate (logs evaluation metrics to MLflow)
+python evaluate.py
+
+# Step 3 — Launch the MLflow UI
+mlflow ui
+# Then open: http://127.0.0.1:5000
+
+# One-liner: train → evaluate → open UI
+python main.py --train && python main.py --evaluate && mlflow ui
+```
+
+### Navigating the UI
+
+1. Open `http://127.0.0.1:5000` in your browser
+2. Select the **`SmartIrrigation-QLearning`** experiment in the left sidebar
+3. View all runs with their hyperparameters and metrics
+4. Select two runs → click **Compare** for side-by-side charts
+5. Click **Models** in the sidebar to browse `QlearningAgent-v1` and `QlearningAgent-v2` in the Model Registry
+6. Each registered model version links back to its source training run and stores the full Q-table
+
+### Model Registry
+
+The Q-table agent is wrapped as an `mlflow.pyfunc` model, enabling:
+- **Versioning**: each `train.py` run creates a new version (`v1`, `v2`, ...)
+- **Lineage**: every model version is linked to its exact source run, hyperparameters, and artifacts
+- **Serving** (optional): `mlflow models serve -m "models:/QlearningAgent-v1/1"` to expose a REST API
+
+```python
+# Load and use a registered model in Python
+import mlflow.pyfunc
+model = mlflow.pyfunc.load_model("models:/QlearningAgent-v1/1")
+actions = model.predict([0, 12, 44])   # pass state indices → returns action indices
+```
+
+> **Storage**: All MLflow data lives in `./mlruns/` and `./mlflow.db` inside the project folder. Nothing is sent to any external service.
 
 ---
 
@@ -272,7 +350,8 @@ git checkout main
 | MLOps Requirement | Implementation | Evidence |
 |-------------------|----------------|----------|
 | **Versioning** | Git commits + annotated tags `exp-qlearning-1` / `exp-qlearning-2` | `git tag` |
-| **Experiment Tracking** | Auto-logging to `results_v1.csv`, `results_v2.csv`, `log.json` on every run | See log files |
+| **Experiment Tracking** | Auto-logging to `results_v*.csv`, `log.json` **and MLflow** on every run | Log files + `mlflow ui` |
+| **MLflow Model Registry** | Each training run registers `QlearningAgent-v1` / `QlearningAgent-v2` as versioned pyfunc models | MLflow Models tab |
 | **Reproducibility** | `python train.py --config qlearning_v1.yaml` exactly reproduces V1 | YAML configs |
 | **Config Management** | Hyperparameters decoupled from code via YAML files | `qlearning_v*.yaml` |
 | **Monitoring Plan** | Defined in REPORT.md §7 (thresholds, drift detection, re-train triggers) | `REPORT.md` |
@@ -294,8 +373,10 @@ If this agent were deployed in a real-world agricultural setting, we would monit
 |------|---------|----------|
 | `environment.py` | Irrigation simulation environment | (imported) |
 | `agent.py` | Q-Learning agent (ε-greedy, save/load) | (imported) |
-| `train.py` | Train from YAML config or run all | `python train.py --config <yaml>` |
-| `evaluate.py` | Evaluate RL vs baseline | `python evaluate.py` |
+| `train.py` | Train from YAML config or run all + MLflow logging | `python train.py --config <yaml>` |
+| `evaluate.py` | Evaluate RL vs baseline + MLflow logging | `python evaluate.py` |
 | `main.py` | Full CLI (train / evaluate / compare / demo) | `python main.py --help` |
 | `app.py` | Interactive desktop GUI | `python app.py` |
 | `verify.py` | Quick sanity check (CSV, JSON, git) | `python verify.py` |
+| `mlruns/` | MLflow local tracking store (auto-created) | `mlflow ui` |
+| `mlflow.db` | MLflow SQLite backend (auto-created) | `mlflow ui` |

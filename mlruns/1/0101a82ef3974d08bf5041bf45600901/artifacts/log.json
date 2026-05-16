@@ -1,0 +1,58 @@
+[
+  {
+    "run_id": "v1",
+    "episodes": 800,
+    "avg_reward": 289.75,
+    "avg_water_used": 255.2125,
+    "avg_crop_health": 74.0133,
+    "epsilon": 1.0,
+    "epsilon_min": 0.05,
+    "epsilon_decay": 0.995,
+    "alpha": 0.1,
+    "gamma": 0.95,
+    "policy_file": "policy_v1.pkl",
+    "label": "policy_v1 \u2014 from qlearning_v1.yaml"
+  },
+  {
+    "run_id": "v2",
+    "episodes": 1500,
+    "avg_reward": 57.9337,
+    "avg_water_used": 267.2767,
+    "avg_crop_health": 65.5913,
+    "epsilon": 1.0,
+    "epsilon_min": 0.02,
+    "epsilon_decay": 0.998,
+    "alpha": 0.08,
+    "gamma": 0.97,
+    "policy_file": "policy_v2_explored.pkl",
+    "label": "policy_v2_explored \u2014 from qlearning_v2.yaml"
+  },
+  {
+    "run_id": "v1",
+    "episodes": 800,
+    "avg_reward": 337.8119,
+    "avg_water_used": 258.3112,
+    "avg_crop_health": 74.7007,
+    "epsilon": 1.0,
+    "epsilon_min": 0.05,
+    "epsilon_decay": 0.995,
+    "alpha": 0.1,
+    "gamma": 0.95,
+    "policy_file": "policy_v1.pkl",
+    "label": "policy_v1 \u2014 from qlearning_v1.yaml"
+  },
+  {
+    "run_id": "v1",
+    "episodes": 800,
+    "avg_reward": 334.8969,
+    "avg_water_used": 254.8338,
+    "avg_crop_health": 73.9823,
+    "epsilon": 1.0,
+    "epsilon_min": 0.05,
+    "epsilon_decay": 0.995,
+    "alpha": 0.1,
+    "gamma": 0.95,
+    "policy_file": "policy_v1.pkl",
+    "label": "V1 \u2014 Conservative (fast decay, fewer episodes)"
+  }
+]

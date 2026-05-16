@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import mlflow
 from environment import IrrigationEnv, ACTIONS, MOISTURE_LEVELS, WEATHER_CONDITIONS, TIME_SLOTS
 from agent import QLearningAgent
 
@@ -122,10 +123,34 @@ def evaluate(n_eval_episodes=50, q_table_path="q_table.pkl", show_plot=True, lab
         state = next_state
         step += 1
 
+    plot_path = "evaluation_comparison.png"
     if show_plot:
         _plot_comparison(rl_rewards, rl_water, rl_health,
                          base_rewards, base_water, base_health,
                          n_eval_episodes)
+
+    # ------------------------------------------------------------------ #
+    #  MLflow — log evaluation results                                    #
+    # ------------------------------------------------------------------ #
+    mlflow.set_experiment("SmartIrrigation-QLearning")
+    with mlflow.start_run(run_name=f"eval-{policy_label}"):
+        mlflow.log_params({
+            "n_eval_episodes": n_eval_episodes,
+            "q_table_path":    q_table_path,
+            "policy_label":    policy_label,
+        })
+        mlflow.log_metrics({
+            "eval_rl_avg_reward":       round(float(np.mean(rl_rewards)), 4),
+            "eval_rl_avg_water":        round(float(np.mean(rl_water)),   4),
+            "eval_rl_avg_health":       round(float(np.mean(rl_health)),  4),
+            "eval_base_avg_reward":     round(float(np.mean(base_rewards)), 4),
+            "eval_base_avg_water":      round(float(np.mean(base_water)),   4),
+            "eval_base_avg_health":     round(float(np.mean(base_health)),  4),
+            "eval_water_saved_pct":     round(water_saved, 2),
+        })
+        if show_plot and __import__("os").path.isfile(plot_path):
+            mlflow.log_artifact(plot_path)
+        print(f"  [MLflow] Evaluation metrics logged.")
 
     return {
         "rl":       {"rewards": rl_rewards, "water": rl_water, "health": rl_health},

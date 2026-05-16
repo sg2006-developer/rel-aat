@@ -1,0 +1,23 @@
+artifact_path: file:C:/Users/saish/Documents/REL_AAT/mlruns/1/models/m-63fe45efc05f41688f09e1339f70677e/artifacts
+flavors:
+  python_function:
+    artifacts:
+      q_table:
+        path: artifacts\policy_v1.pkl
+        uri: policy_v1.pkl
+    cloudpickle_version: 3.1.2
+    code: null
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pyfunc.model
+    python_model: python_model.pkl
+    python_version: 3.14.3
+    streamable: false
+mlflow_version: 3.12.0
+model_id: m-63fe45efc05f41688f09e1339f70677e
+model_size_bytes: 3819
+model_uuid: m-63fe45efc05f41688f09e1339f70677e
+prompts: null
+run_id: e33f66ea76474d0192a228724b11dc8b
+utc_time_created: '2026-05-16 03:33:00.217765'

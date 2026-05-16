@@ -8,9 +8,42 @@ import matplotlib
 matplotlib.use("Agg")          # non-interactive backend — safe for headless runs
 import matplotlib.pyplot as plt
 import yaml
+import pickle
+import mlflow
+import mlflow.pyfunc
+import mlflow.artifacts
 
 from environment import IrrigationEnv
 from agent import QLearningAgent
+
+# ------------------------------------------------------------------ #
+#  MLflow setup                                                        #
+# ------------------------------------------------------------------ #
+MLFLOW_EXPERIMENT = "SmartIrrigation-QLearning"
+mlflow.set_experiment(MLFLOW_EXPERIMENT)
+
+
+# ------------------------------------------------------------------ #
+#  MLflow pyfunc wrapper — makes model appear in the Models tab       #
+# ------------------------------------------------------------------ #
+
+class QLearningPyfunc(mlflow.pyfunc.PythonModel):
+    """
+    Wraps the Q-table agent as an MLflow pyfunc model.
+    predict(context, data):
+      data  — list or 1-D numpy array of integer state indices
+      returns — list of best actions (greedy argmax over Q-table)
+    """
+
+    def load_context(self, context):
+        pkl_path = context.artifacts["q_table"]
+        with open(pkl_path, "rb") as f:
+            self.q_table = pickle.load(f)
+
+    def predict(self, context, model_input):
+        import numpy as np
+        states = np.asarray(model_input).flatten().astype(int)
+        return [int(np.argmax(self.q_table[s])) for s in states]
 
 
 def moving_average(data, window=50):
@@ -115,69 +148,123 @@ def train(n_episodes=1000, show_plot=False, save_path="q_table.pkl",
     print(f"   Run ID : {run_id or 'unset'}")
     print("=" * 55)
 
-    for ep in range(1, n_episodes + 1):
-        state        = env.reset()
-        total_reward = 0.0
-        done         = False
+    # ------------------------------------------------------------------ #
+    #  MLflow run — wraps the entire training loop                        #
+    # ------------------------------------------------------------------ #
+    with mlflow.start_run(run_name=run_id or label) as mlf_run:
+        # --- Log hyperparameters ---
+        mlflow.log_params({
+            "run_id":        run_id or "unset",
+            "n_episodes":    n_episodes,
+            "alpha":         alpha,
+            "gamma":         gamma,
+            "epsilon":       epsilon,
+            "epsilon_min":   epsilon_min,
+            "epsilon_decay": epsilon_decay,
+            "policy_file":   save_path,
+            "label":         label,
+        })
+        print(f"  [MLflow] Run ID  : {mlf_run.info.run_id}")
+        print(f"  [MLflow] Tracking: {mlflow.get_tracking_uri()}")
 
-        while not done:
-            action               = agent.choose_action(state)
-            next_state, reward, done = env.step(action)
-            agent.update(state, action, reward, next_state, done)
-            state        = next_state
-            total_reward += reward
+        for ep in range(1, n_episodes + 1):
+            state        = env.reset()
+            total_reward = 0.0
+            done         = False
 
-        agent.decay_epsilon()
+            while not done:
+                action               = agent.choose_action(state)
+                next_state, reward, done = env.step(action)
+                agent.update(state, action, reward, next_state, done)
+                state        = next_state
+                total_reward += reward
 
-        episode_rewards.append(total_reward)
-        episode_water.append(env.total_water)
-        episode_health.append(env.crop_health)
+            agent.decay_epsilon()
 
-        if ep % 100 == 0:
-            avg_r = np.mean(episode_rewards[-100:])
-            avg_w = np.mean(episode_water[-100:])
-            print(
-                f"  Episode {ep:5d} | "
-                f"Avg Reward: {avg_r:8.2f} | "
-                f"Avg Water: {avg_w:6.1f} | "
-                f"Epsilon: {agent.epsilon:.3f}"
-            )
+            episode_rewards.append(total_reward)
+            episode_water.append(env.total_water)
+            episode_health.append(env.crop_health)
 
-    print("=" * 55)
-    print("  Training complete.")
-    agent.save(save_path)
-    agent.save("q_table.pkl")   # keep generic pointer to latest policy
+            if ep % 100 == 0:
+                avg_r = np.mean(episode_rewards[-100:])
+                avg_w = np.mean(episode_water[-100:])
+                avg_h = np.mean(episode_health[-100:])
+                print(
+                    f"  Episode {ep:5d} | "
+                    f"Avg Reward: {avg_r:8.2f} | "
+                    f"Avg Water: {avg_w:6.1f} | "
+                    f"Epsilon: {agent.epsilon:.3f}"
+                )
+                # Log rolling metrics to MLflow every 100 episodes
+                mlflow.log_metrics({
+                    "avg_reward_100":  round(float(avg_r), 4),
+                    "avg_water_100":   round(float(avg_w), 4),
+                    "avg_health_100":  round(float(avg_h), 4),
+                    "epsilon":         round(agent.epsilon, 4),
+                }, step=ep)
 
-    # ---- Compute summary stats ----
-    avg_reward = round(float(np.mean(episode_rewards)), 4)
-    avg_water  = round(float(np.mean(episode_water)), 4)
-    avg_health = round(float(np.mean(episode_health)), 4)
+        print("=" * 55)
+        print("  Training complete.")
+        agent.save(save_path)
+        agent.save("q_table.pkl")   # keep generic pointer to latest policy
 
-    # ---- Write CSV log ----
-    csv_row = {
-        "run_id":        run_id or str(uuid.uuid4())[:8],
-        "episodes":      n_episodes,
-        "avg_reward":    avg_reward,
-        "avg_water_used": avg_water,
-        "avg_crop_health": avg_health,
-        "epsilon":       round(epsilon, 4),
-        "epsilon_min":   round(epsilon_min, 4),
-        "epsilon_decay": round(epsilon_decay, 4),
-        "alpha":         round(alpha, 4),
-        "gamma":         round(gamma, 4),
-        "policy_file":   save_path,
-    }
-    _log_results_csv(log_csv, csv_row)
+        # ---- Compute summary stats ----
+        avg_reward = round(float(np.mean(episode_rewards)), 4)
+        avg_water  = round(float(np.mean(episode_water)), 4)
+        avg_health = round(float(np.mean(episode_health)), 4)
 
-    # ---- Write JSON log ----
-    json_entry = {**csv_row, "label": label}
-    _log_results_json(log_json, json_entry)
+        # ---- Write CSV log ----
+        csv_row = {
+            "run_id":        run_id or str(uuid.uuid4())[:8],
+            "episodes":      n_episodes,
+            "avg_reward":    avg_reward,
+            "avg_water_used": avg_water,
+            "avg_crop_health": avg_health,
+            "epsilon":       round(epsilon, 4),
+            "epsilon_min":   round(epsilon_min, 4),
+            "epsilon_decay": round(epsilon_decay, 4),
+            "alpha":         round(alpha, 4),
+            "gamma":         round(gamma, 4),
+            "policy_file":   save_path,
+        }
+        _log_results_csv(log_csv, csv_row)
 
-    # ---- Plot ----
-    _plot_training(episode_rewards, episode_water, episode_health, n_episodes,
-                   title=label, save_path=plot_path)
-    if show_plot:
-        plt.show()
+        # ---- Write JSON log ----
+        json_entry = {**csv_row, "label": label}
+        _log_results_json(log_json, json_entry)
+
+        # ---- Plot ----
+        _plot_training(episode_rewards, episode_water, episode_health, n_episodes,
+                       title=label, save_path=plot_path)
+        if show_plot:
+            plt.show()
+
+        # ---- Log final summary metrics to MLflow ----
+        mlflow.log_metrics({
+            "final_avg_reward":      avg_reward,
+            "final_avg_water_used":  avg_water,
+            "final_avg_crop_health": avg_health,
+        })
+
+        # ---- Log plain file artifacts (CSV, JSON, plot) ----
+        mlflow.log_artifact(plot_path)          # training curve plot
+        if os.path.isfile(log_csv):
+            mlflow.log_artifact(log_csv)        # CSV experiment log
+        if os.path.isfile(log_json):
+            mlflow.log_artifact(log_json)       # JSON experiment log
+
+        # ---- Log as a registered pyfunc Model (appears in Models tab) ----
+        # Use run_id as the model name so V1 and V2 register separately
+        model_name = f"QlearningAgent-{run_id or 'default'}"
+        mlflow.pyfunc.log_model(
+            artifact_path="q_learning_model",
+            python_model=QLearningPyfunc(),
+            artifacts={"q_table": save_path},
+            registered_model_name=model_name,
+            pip_requirements=["numpy", "mlflow"],
+        )
+        print(f"  [MLflow] Model registered as '{model_name}'")
+        print(f"  [MLflow] Artifacts logged to run {mlf_run.info.run_id}")
 
     return agent, episode_rewards, episode_water, episode_health
 
